@@ -1,4 +1,4 @@
-name: Tactile Theme
+name: 코딩 일기장
 markdown: redcarpet
-pygments: true
+highlighter: pyhments
 permalink: pretty
