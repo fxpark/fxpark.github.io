@@ -1,4 +1,4 @@
 name: 코딩 일기장
 markdown: kramdown
-highlighter: pyhments
+highlighter: rouge
 permalink: pretty
