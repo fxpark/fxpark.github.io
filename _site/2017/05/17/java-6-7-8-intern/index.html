@@ -165,7 +165,7 @@ Java 6의 string pool에서 가장 중요한 문제는 위치(PermGen 영역)이
 
 <p>보다시피, 시간이 일정하고 10배나 작은 string pool에서 0에서 100만 까지의 결과 테이블과 크게 달라보이지 않는다. 저속 랩탑이라도 pool 크기가 충분히 크다는 것을 전제로하면 JVM string pool에 초당 백만개의 새 문자열을 추가 할 수 있다.</p>
 
-<h1 id="사용자-정의-string-pool을-계속-사용하는가">사용자 정의 string pool을 계속 사용하는가?</h1>
+<h1 id="사용자-정의-string-pool을-계속-사용해야-하나">사용자 정의 string pool을 계속 사용해야 하나?</h1>
 
 <p>이제 JVM string pool을 JVM string pool을 구현하기 위해서 자주 사용되는 WeakHashMap&lt;String, WeakReference<String>&gt;과 비교해 보자. 다음 메소드는 String.intern을 교체하기 위해서 사용된다.</String></p>
 
