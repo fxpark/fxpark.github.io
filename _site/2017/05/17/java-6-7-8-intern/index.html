@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  
+<meta charset='utf-8'>
+<meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+<!-- CSS -->
+<link href='https://fonts.googleapis.com/css?family=Chivo:900' rel='stylesheet' type='text/css'>
+<link rel="stylesheet" type="text/css" href="/stylesheets/stylesheet.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/stylesheets/pygment_trac.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/stylesheets/print.css" media="print" />
+
+<!--[if lt IE 9]>
+<script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+<![endif]-->
+
+<title>Java 6,7,8 에서의 String.intern</title>
+
+
+</head>
+
+<body>
+  <div id="container">
+    <div class="inner">
+      <header>
+        <h1><a href="/">코딩 일기장</a></h1>
+      </header>
+
+      <section id="downloads" class="clearfix">
+    <a href="https://github.com/ankur-gupta/jekyll-tactile-theme/" id="view-on-github" class="button"><span>View on GitHub</span></a>
+</section>
+
+      <hr/>
+
+      <section id="main_content">
+        <header class="post-header">
+    <h1>Java 6,7,8 에서의 String.intern</h1>
+    <p class="meta">May 17, 2017</p>
+</header>
+
+<p>원문: <a href="http://java-performance.info/string-intern-in-java-6-7-8/">http://java-performance.info/string-intern-in-java-6-7-8/</a></p>
+
+<p>이 문서는 String.intern 메소드가 Java 6에서 어떻게 구현이 되었고, Java 7 과 Java 8에서는 어떻게 변화되었는지에 대해서 다룰 예정이다.</p>
+
+<h1 id="string-pooling">String pooling</h1>
+
+<p>String polling(일명 string canonicalisation)은 동일한 값이지만 다른 고유 ID값을 가지고 있는 여러 String 객체를 단일 공유 String 객체로 바꾸는 프로세스이다. 당신은 Map&lt;String, String&gt;(요구 사항에 따라 soft참조 또는 weak참조가있을 수 있는)을 유지하고 표준화된 값을 맵의 값으로 사용하여 이 목표를 달성할 수 있다. 또는 당신은 JDK에서 제공하는 String.intern() 메소드를 이용할 수도 있다.</p>
+
+<p>Java 6 시절에는 pooling이 제어 불능 상태가 되면 OutofMemoryException을 만날 가능성이 높기 때문에 많은 표준에서 String.intern()을 사용하는 것을 금지했었다.<br />
+그로인해 Java 7에서는 String pooling부분이 상당부분 변경이 되었다.<br />
+더 자세한 내용은 다음을 참고하면 된다.<br />
+<a href="http://bugs.sun.com/view_bug.do?bug_id=6962931">http://bugs.sun.com/view_bug.do?bug_id=6962931</a>
+<a href="http://bugs.sun.com/view_bug.do?bug_id=6962930">http://bugs.sun.com/view_bug.do?bug_id=6962930</a></p>
+
+<h1 id="stringintern-in-java-6">String.intern() in Java 6</h1>
+
+<p>예전에는 모든 interned string은 PermGen영역(로딩된 클래스를 저장하거나 string pool로 사용되는 힙영역의 고정된 size)에 저장이 되었다. 반면 interned string 외에도 PermGen string pool에는 이전에 사용된 프로그램의 모든 리터럴 문자열도 포함하고 있다. (여기서 중요한 단어는 “사용된” 이다. 만약에 클래스나 메소드가 전혀 로드되거나 불려진 적이 없다면, 어떤 정의된 상수도 로드되지 않을것이다.)<br />
+Java 6의 string pool에서 가장 중요한 문제는 위치(PermGen 영역)이다. PermGen영역은 고정된 크기를 가지고 runtime시 용량을 확장 할 수가 없다.<br />
+용량을 설정 하기 위해서는 -XX:MaxPermSize=N 옵션을 이용해서 설정하여야 한다. 필자가 아는한 기본 PermGen 영역은 플랫폼에 따라 32M에서 96M로 다양하다. 그것의 크기는 증가시킬 수 있지만, 크기는 여전히 고정이 될 것이다. 이런 제한은 String.intern의 매우 신중한 사용을 필요로 했다 - 만약 메소드에서 통제되지 않는 사용자의 입력을 받는다면 intern을 하지 않는게 좋다.  그 이유는 Java 6에서는 string pool이 대부분 수동으로 관리되는 map에서 구현이 되었기 때문이다.</p>
+
+<h1 id="stringintern-in-java-7">String.intern() in Java 7</h1>
+
+<p>오라클 엔지니어들은 Java 7의 string pooling 로직에 매우 중요한 변화를 만들었다. (그것은 string pool이 heap에 재배치 된 것이다.). 그것은 더 이상 고정된 크기의 별도 메모리 공간에 제약되지 않는다는것을 의미한다. 모든 string객체는 대부분의 일반적인 객체들처럼 이제 힙에 저장되고, 어플리케이션의 heap 사이즈를 조정 함으로써 관리를 할수 있게 되었다. 기술적으로, 이것만으로도 Java 7 에서 String.intern()을 재검토할 충분한 이유가 되지만, 또다른 이유들도 존재한다.</p>
+
+<h1 id="string-pool-값은-garbage-collect가-된다">String pool 값은 garbage collect가 된다.</h1>
+
+<p>그렇다. 모든 JVM string pool에 존재하는 string값은 프로그램 root에 참조가 없다면 가비지 콜렉터의 수집대상이 된다. 이내용은 모든 Java 버전에 해당되는 내용이다. 이 말인즉, Intern된 string이 scope를 벗어났고, 참조가 없다면 가비지 콜렉팅 되는것을 의미한다.</p>
+
+<p>가비지 콜렉팅의 수집대상이 되고 힙에 존재하는 JVM string pool은 모든 string 문자열에 대해서 적합한 장소이다. 그렇지 않은가? 사용되지 않는 string은 가비지 콜렉팅 대상이 되고, 사용되는 string은 입력과 동일한 문자열을 얻을 경우에 메모리를 절약해 줄 수 있기 때문에 이론적으로는 사실이다. 이것은 완벽한 메모리 전략으로 보이는가? 거의 그렇긴 하다. 당신은 결정을 하기전에 string pool이 어떻게 구현이 되어 있는지 알 필요가 있다.</p>
+
+<h1 id="java-6-7-과-8에서의-jvm-string-pool-구현">Java 6, 7 과 8에서의 JVM string pool 구현</h1>
+
+<p>string pool은 고정된 용량의 해시 맵으로 구현되어 있으며, 각 버킷에는 동일한 해시 값이 들어있는 string의 목록이 들어 있다. 일부 구현의 세부사항은 다음 Java 버그 리포트에서 알 수 있다.<br />
+<a href="http://bugs.sun.com/view_bug.do?bug_id=6962930">http://bugs.sun.com/view_bug.do?bug_id=6962930</a></p>
+
+<p>기본적인 pool 크기는 1009이다(그것은 위에서 언급한 버그 리포트의 소스 코드에 나와 있으며, 해당 값은 Java7u40에 증가되었다.). 그 값은 Java 6의 초기 버전에는 상수 값으로 설정되어 있었고, Java 6u30 과 Java6u41 사이에 설정이 가능하게 되었다. Java 7에서는 처음부터 구성이 가능하였다(최소한 Java7u02버전 부터 설정가능하다).  -XX:StringTableSize=N 을 지정하여 구성할 수 있고, 여기서 N은 string pool의 맵 크기이다. N의 값은 더나은 성능을 위해서는 소수로 지정하여야 한다.</p>
+
+<p>이 매개 변수는 Java 6에서는 PermGen 크기로 인해 여전히 고정된 크기로 제한이 되어 있어 많은 도움이 안된다. 추가 논의에 대해서는 Java 6을 제외한다.</p>
+
+<h1 id="java7-java7u40-버전까지-해당">Java7 (Java7u40 버전까지 해당)</h1>
+
+<p>반면에 Java 7에서는 훨씬 더 큰 힙크기로 제한이 된다. 이말인 즉슨, string pool 크기를 미리 높은 값으로 설정 할 수 있다는 말이다(이 값은 응용 프로그램의 요구사항에 따라서 달라진다). <br />
+일반적으로, 메모리 데이터셋 크기가 최소 수백메가 바이트가 될때, 메모리 사용량에 대해서 걱정하게 된다. 백만개의 항목을 저장해야 하는 상황이라면 string pool에 대해서는 8~16M를 할당하는게 적절한 것으로 보인다. (-XX:StringTableSize 값을 1,000,000으로 설정하지 마라. 이 값은 소수가 아니다. 그 대신에 1,000,003 값을 사용하라)</p>
+
+<p>당신은 intern된 string이 버킷안에서 일정하게 분산된 상황을 예상할 수 있다 - 그 이유는 다음 기사(hashCode method performance tuning)를 읽어서 확인하라. <br />
+만약에 당신이 String.intern()을 적극적으로 사용하려면 -XX:StringTableSize 값을 (디폴트값 1009 보다) 더 크게  키워라. 그렇지 않으면, 이 메소드 성능은 링크드 리스트 성능으로 저하될 것이다.</p>
+
+<p>필자는 길이가 100자 미만의 string에 대해서 string길이와 intern에 걸리는 시간 사이에 의존성을 찾지 못했다. (실생활에서 50자 정도 길이의 string중복은 거의 찾을 수 없을 거라 생각하기에, 100자 제한은 좋은 테스트라 생각한다.)</p>
+
+<p>다음은 default pool 크기의 테스트 응용 프로그램 로그에서 추출한 것이다. 이미 intern된 다수의 string이 주어졌을때(첫번째 숫자), 10000개의 string을 intern하는데 걸리는 시간(두번째 숫자)을 나타낸다.</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">0</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="n">sec</span>
+<span class="mi">50000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">03</span> <span class="n">sec</span>  
+<span class="mi">100000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">073</span> <span class="n">sec</span>  
+<span class="mi">150000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">13</span> <span class="n">sec</span>
+<span class="mi">200000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">196</span> <span class="n">sec</span>
+<span class="mi">250000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">279</span> <span class="n">sec</span>
+<span class="mi">300000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">376</span> <span class="n">sec</span>
+<span class="mi">350000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">471</span> <span class="n">sec</span>
+<span class="mi">400000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">574</span> <span class="n">sec</span>
+<span class="mi">450000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">666</span> <span class="n">sec</span>
+<span class="mi">500000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">755</span> <span class="n">sec</span>
+<span class="mi">550000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">854</span> <span class="n">sec</span>
+<span class="mi">600000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">916</span> <span class="n">sec</span>
+<span class="mi">650000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mo">006</span> <span class="n">sec</span>
+<span class="mi">700000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">095</span> <span class="n">sec</span>
+<span class="mi">750000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">273</span> <span class="n">sec</span>
+<span class="mi">800000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">248</span> <span class="n">sec</span>
+<span class="mi">850000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">446</span> <span class="n">sec</span>
+<span class="mi">900000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">585</span> <span class="n">sec</span>
+<span class="mi">950000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">635</span> <span class="n">sec</span>
+<span class="mi">1000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">1</span><span class="o">.</span><span class="mi">913</span> <span class="n">sec</span></code></pre></figure>
+
+<p>이 테스트 결과는 Core i5-3317U@1.7Ghz CPU에서 얻은 결과이다. 보다시피, 결과는 linear하게 증가하고, JVM string pool 크기가 1 백만 개의 문자열을 가지고 있을때 초당 약 5,000 개의 string만 intern 처리를 할 수 있다. 이것은 많은 양의 데이터를 메모리에서 처리해야하는 대부분의 프로그램에서는 받아 들일 수 없을 정도로 느리다.</p>
+
+<p>그러면 같은 테스트를 -XX:StringTableSize=100003 옵션을 주고 테스트 해보자.</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">50000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">017</span> <span class="n">sec</span>
+<span class="mi">100000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">150000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">200000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">250000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">007</span> <span class="n">sec</span>
+<span class="mi">300000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">350000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">400000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">450000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">500000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">013</span> <span class="n">sec</span>
+<span class="mi">550000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">600000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">012</span> <span class="n">sec</span>
+<span class="mi">650000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">015</span> <span class="n">sec</span>
+<span class="mi">700000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">015</span> <span class="n">sec</span>
+<span class="mi">750000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">800000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">850000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">900000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">950000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">012</span> <span class="n">sec</span>
+<span class="mi">1000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">012</span> <span class="n">sec</span></code></pre></figure>
+
+<p>보다시피, 이상황 에서는 string을 pool에 넣을때 거의 상수시간만큼 걸린다(버킷당 평균 10개 string을 넘지 않는다.). 그럼 같은 세팅으로 1000만개의 string을 pool에 넣어보겠다.(버킷당 평균 100개의 string을 가지고 있을것이다.)</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">2000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">024</span> <span class="n">sec</span>
+<span class="mi">3000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">02</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">4000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">053</span> <span class="n">sec</span>
+<span class="mi">5000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">051</span> <span class="n">sec</span>
+<span class="mi">6000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">034</span> <span class="n">sec</span>
+<span class="mi">7000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">041</span> <span class="n">sec</span>
+<span class="mi">8000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">089</span> <span class="n">sec</span>
+<span class="mi">9000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">111</span> <span class="n">sec</span>
+<span class="mi">10000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mi">123</span> <span class="n">sec</span></code></pre></figure>
+
+<p>그러면 이제 pool 크기를 100만 버킷으로 늘려보겠다. (정확하게는 1,000,003)</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">1000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">005</span> <span class="n">sec</span>
+<span class="mi">2000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">005</span> <span class="n">sec</span>
+<span class="mi">3000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">005</span> <span class="n">sec</span>
+<span class="mi">4000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">004</span> <span class="n">sec</span>
+<span class="mi">5000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">004</span> <span class="n">sec</span>
+<span class="mi">6000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">7000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">8000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">9000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">10000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span></code></pre></figure>
+
+<p>보다시피, 시간이 일정하고 10배나 작은 string pool에서 0에서 100만 까지의 결과 테이블과 크게 달라보이지 않는다. 저속 랩탑이라도 pool 크기가 충분히 크다는 것을 전제로하면 JVM string pool에 초당 백만개의 새 문자열을 추가 할 수 있다.</p>
+
+<h1 id="사용자-정의-string-pool을-계속-사용하는가">사용자 정의 string pool을 계속 사용하는가?</h1>
+
+<p>이제 JVM string pool을 JVM string pool을 구현하기 위해서 자주 사용되는 WeakHashMap&lt;String, WeakReference<String>&gt;과 비교해 보자. 다음 메소드는 String.intern을 교체하기 위해서 사용된다.</String></p>
+
+<figure class="highlight"><pre><code class="language-java" data-lang="java"><span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">WeakHashMap</span><span class="o">&lt;</span><span class="n">String</span><span class="o">,</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span> <span class="n">s_manualCache</span> 
+	<span class="o">=</span> <span class="k">new</span> <span class="n">WeakHashMap</span><span class="o">&lt;</span><span class="n">String</span><span class="o">,</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;(</span> <span class="mi">100000</span> <span class="o">);</span>
+
+<span class="kd">private</span> <span class="kd">static</span> <span class="n">String</span> <span class="nf">manualIntern</span><span class="o">(</span> <span class="kd">final</span> <span class="n">String</span> <span class="n">str</span> <span class="o">)</span>
+<span class="o">{</span>
+	<span class="kd">final</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span> <span class="n">cached</span> <span class="o">=</span> <span class="n">s_manualCache</span><span class="o">.</span><span class="na">get</span><span class="o">(</span> <span class="n">str</span> <span class="o">);</span>
+	<span class="k">if</span> <span class="o">(</span> <span class="n">cached</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">)</span>
+	<span class="o">{</span>
+		<span class="kd">final</span> <span class="n">String</span> <span class="n">value</span> <span class="o">=</span> <span class="n">cached</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+		<span class="k">if</span> <span class="o">(</span> <span class="n">value</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">)</span>
+			<span class="k">return</span> <span class="n">value</span><span class="o">;</span>
+	<span class="o">}</span>
+	<span class="n">s_manualCache</span><span class="o">.</span><span class="na">put</span><span class="o">(</span> <span class="n">str</span><span class="o">,</span> <span class="k">new</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;(</span> <span class="n">str</span> <span class="o">)</span> <span class="o">);</span>
+	<span class="k">return</span> <span class="n">str</span><span class="o">;</span>
+<span class="o">}</span></code></pre></figure>
+
+<p>이것은 수동 pool을 이용하여 같은 테스트를 한뒤에 결과를 나타낸다.</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">0</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">001</span> <span class="n">sec</span>
+<span class="mi">50000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">03</span> <span class="n">sec</span>
+<span class="mi">100000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">034</span> <span class="n">sec</span>
+<span class="mi">150000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">200000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">250000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">300000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">350000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">400000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">027</span> <span class="n">sec</span>
+<span class="mi">450000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">500000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">550000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">600000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">650000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">700000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">750000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">800000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">007</span> <span class="n">sec</span>
+<span class="mi">850000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">900000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">950000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">1000000</span><span class="p">;</span> <span class="n">manual</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">8</span> <span class="n">sec</span></code></pre></figure>
+
+<p>수동으로 작성된 pool은 JVM의 메모리가 충분한 경우 비슷한 성능을 제공한다.
+불행하게도, String.valueOf(0 &lt; N &lt; 1,000,000,000)과 같은 아주 짧은 string을 intern하는 필자의 테스트 경우에는 -Xmx1280M 옵션하에서 2.5M개의 string만 유지가 가능했다. 반면에 JVM string pool(size = 1,000,003)은 JVM이 메모리가 전부 채워질때 까지(5배나 많은 12.72M) 비슷한 성능을 제공한다. 필자 생각에는 프로그램에서 수동 string pooling을 제거하는것은 중요한 힌트 생각한다.</p>
+
+<h1 id="java-7u40버전이상과-java-8에서의-stringintern">Java 7u40버전이상과 Java 8에서의 String.intern()</h1>
+
+<p>Java7u40(중요한 성능 업데이트)에서는 string pool 크기가 60013으로 증가하였다. 이값은 당신이 충돌을 경험하기 이전에 pool에 대략 30,000개의 중복 string을 담을 수 있다는 이야기다. 일반적으로 이것은 실제로 intern을 할 가치가 있는 충분한 데이터이다. 당신은 이 값을 -XX:+PrintFlagsFinal JVM 파라미터를 사용하여 얻을 수 있다.</p>
+
+<p>필자는 Java 8 에서 동일한 실험을 하려고 했다. Java 8은 여전히 -XX:StringTableSIze 매개 변수를 사용하고 있고 Java 7 성능에 필적한다. 
+유일한 차이점은 기본 pool 크기가 Java 8 에서 60013으로 증가한 것이다.</p>
+
+<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="mi">50000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">100000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">150000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">200000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">250000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">300000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">00</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">350000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">011</span> <span class="n">sec</span>
+<span class="mi">400000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">012</span> <span class="n">sec</span>
+<span class="mi">450000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span> <span class="n">sec</span>
+<span class="mi">500000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">013</span> <span class="n">sec</span>
+<span class="mi">550000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">013</span> <span class="n">sec</span>
+<span class="mi">600000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">014</span> <span class="n">sec</span>
+<span class="mi">650000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">700000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">015</span> <span class="n">sec</span>
+<span class="mi">750000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">02</span><span class="mi">9</span> <span class="n">sec</span>
+<span class="mi">800000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">850000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">02</span> <span class="n">sec</span>
+<span class="mi">900000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">017</span> <span class="n">sec</span>
+<span class="mi">950000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="mi">8</span> <span class="n">sec</span>
+<span class="mi">1000000</span><span class="p">;</span> <span class="n">time</span> <span class="o">=</span> <span class="mi">0</span><span class="o">.</span><span class="mo">021</span> <span class="n">sec</span></code></pre></figure>
+
+<h1 id="test-code">Test code</h1>
+
+<p>이 글의 테스트 코드는 다소 단순한다. 메소드는 loop안에서 새로운 string을 생성하고 intern한다. 그리고 추가로 10000개의 문자열을 intern하는데에 걸리는 시간을 측정한다. -verbose:gc JVM 매개 변수를 이용하여 프로그램을 실행한 뒤에 가비지 콜렉션이 언제 발생하는지 확인할 가치가 있다. 그리고 또한 -Xmx 매개 변수를 사용하여 최대 힙 크기를 지정할 수도 있다.</p>
+
+<p>아래에는 2가지 테스트가 있다. 
+testStringPoolGarbageCollection은 JVM string pool이 실제로 가비지 콜렉트가 되는것을 보여준다. - 가비지 콜렉션 로그 메세지를 확인하고 2번째 테스트에서는 string이 intern된 시간을 확인한다. 이 테스트는 기본 PermGen 크기를 가진 Java 6 에서는 실패하기 때문에 Java 7을 사용하거나 테스트 메소드의 변수값을 업데이트 해야한다.</p>
+
+<p>두번째 테스트는 얼마나 많은 intern된 문자열을 메모리에 저장할 수 있는지 보여준다. Java 6에서는 다른 메모리 세팅으로 실행하라(-Xmx128M 와 -Xmx1280M(10배 이상의값)). 대부분 pool에 넣을 수 있는 string의 수는 영향을 미치지 않는다. 반면 Java 7 에서는 전체 힙을 string으로 채울수 있다.</p>
+
+<figure class="highlight"><pre><code class="language-java" data-lang="java"><span class="cm">/**
+ * Testing String.intern.
+ *
+ * Run this class at least with -verbose:gc JVM parameter.
+ */</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">InternTest</span> <span class="o">{</span>
+    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span> <span class="n">String</span><span class="o">[]</span> <span class="n">args</span> <span class="o">)</span> <span class="o">{</span>
+        <span class="n">testStringPoolGarbageCollection</span><span class="o">();</span>
+        <span class="n">testLongLoop</span><span class="o">();</span>
+<span class="o">}</span>
+
+    <span class="cm">/**
+     * Use this method to see where interned strings are stored
+     * and how many of them can you fit for the given heap size.
+     */</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">testLongLoop</span><span class="o">()</span>
+    <span class="o">{</span>
+        <span class="n">test</span><span class="o">(</span> <span class="mi">1000</span> <span class="o">*</span> <span class="mi">1000</span> <span class="o">*</span> <span class="mi">1000</span> <span class="o">);</span>
+        <span class="c1">//uncomment the following line to see the hand-written cache performance</span>
+        <span class="c1">//testManual( 1000 * 1000 * 1000 );</span>
+    <span class="o">}</span>
+ 
+    <span class="cm">/**
+     * Use this method to check that not used interned strings are garbage collected.
+     */</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">testStringPoolGarbageCollection</span><span class="o">()</span>
+    <span class="o">{</span>
+        <span class="c1">//first method call - use it as a reference</span>
+        <span class="n">test</span><span class="o">(</span> <span class="mi">1000</span> <span class="o">*</span> <span class="mi">1000</span> <span class="o">);</span>
+        <span class="c1">//we are going to clean the cache here.</span>
+        <span class="n">System</span><span class="o">.</span><span class="na">gc</span><span class="o">();</span>
+        <span class="c1">//check the memory consumption and how long does it take to intern strings</span>
+        <span class="c1">//in the second method call.</span>
+        <span class="n">test</span><span class="o">(</span> <span class="mi">1000</span> <span class="o">*</span> <span class="mi">1000</span> <span class="o">);</span>
+    <span class="o">}</span>
+ 
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">test</span><span class="o">(</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">cnt</span> <span class="o">)</span>
+    <span class="o">{</span>
+        <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span> <span class="n">lst</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;(</span> <span class="mi">100</span> <span class="o">);</span>
+        <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+        <span class="k">for</span> <span class="o">(</span> <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">cnt</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span> <span class="o">)</span>
+        <span class="o">{</span>
+            <span class="kd">final</span> <span class="n">String</span> <span class="n">str</span> <span class="o">=</span> <span class="s">"Very long test string, which tells you about something "</span> <span class="o">+</span>
+                <span class="s">"very-very important, definitely deserving to be interned #"</span> <span class="o">+</span> <span class="n">i</span><span class="o">;</span>
+            <span class="c1">//uncomment the following line to test dependency from string length</span>
+	    <span class="c1">//final String str = Integer.toString( i );</span>
+	    <span class="n">lst</span><span class="o">.</span><span class="na">add</span><span class="o">(</span> <span class="n">str</span><span class="o">.</span><span class="na">intern</span><span class="o">()</span> <span class="o">);</span>
+     	    <span class="k">if</span> <span class="o">(</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">10000</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">)</span> <span class="o">{</span>
+                <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span> <span class="n">i</span> <span class="o">+</span> <span class="s">"; time = "</span> <span class="o">+</span> <span class="o">(</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">()</span> <span class="o">-</span> <span class="n">start</span> <span class="o">)</span> <span class="o">/</span> <span class="mf">1000.0</span> <span class="o">+</span> <span class="s">" sec"</span> <span class="o">);</span>
+	        <span class="n">start</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+            <span class="o">}</span>
+	<span class="o">}</span>
+	<span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span> <span class="s">"Total length = "</span> <span class="o">+</span> <span class="n">lst</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">);</span>
+    <span class="o">}</span>
+ 
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">WeakHashMap</span><span class="o">&lt;</span><span class="n">String</span><span class="o">,</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span> <span class="n">s_manualCache</span> <span class="o">=</span> <span class="k">new</span> <span class="n">WeakHashMap</span><span class="o">&lt;</span><span class="n">String</span><span class="o">,</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;(</span> <span class="mi">100000</span> <span class="o">);</span>
+
+    <span class="kd">private</span> <span class="kd">static</span> <span class="n">String</span> <span class="nf">manualIntern</span><span class="o">(</span> <span class="kd">final</span> <span class="n">String</span> <span class="n">str</span> <span class="o">)</span>
+    <span class="o">{</span>
+        <span class="kd">final</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span> <span class="n">cached</span> <span class="o">=</span> <span class="n">s_manualCache</span><span class="o">.</span><span class="na">get</span><span class="o">(</span> <span class="n">str</span> <span class="o">);</span>
+        <span class="k">if</span> <span class="o">(</span> <span class="n">cached</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">)</span>
+        <span class="o">{</span>
+            <span class="kd">final</span> <span class="n">String</span> <span class="n">value</span> <span class="o">=</span> <span class="n">cached</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+       	    <span class="k">if</span> <span class="o">(</span> <span class="n">value</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">)</span>
+                <span class="k">return</span> <span class="n">value</span><span class="o">;</span>
+        <span class="o">}</span>
+        <span class="n">s_manualCache</span><span class="o">.</span><span class="na">put</span><span class="o">(</span> <span class="n">str</span><span class="o">,</span> <span class="k">new</span> <span class="n">WeakReference</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;(</span> <span class="n">str</span> <span class="o">)</span> <span class="o">);</span>
+        <span class="k">return</span> <span class="n">str</span><span class="o">;</span>
+    <span class="o">}</span>
+ 
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">testManual</span><span class="o">(</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">cnt</span> <span class="o">)</span>
+    <span class="o">{</span>
+        <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span> <span class="n">lst</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;(</span> <span class="mi">100</span> <span class="o">);</span>
+        <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+        <span class="k">for</span> <span class="o">(</span> <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">cnt</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span> <span class="o">)</span>
+        <span class="o">{</span>
+            <span class="kd">final</span> <span class="n">String</span> <span class="n">str</span> <span class="o">=</span> <span class="s">"Very long test string, which tells you about something "</span> <span class="o">+</span>
+       	        <span class="s">"very-very important, definitely deserving to be interned #"</span> <span class="o">+</span> <span class="n">i</span><span class="o">;</span>
+            <span class="n">lst</span><span class="o">.</span><span class="na">add</span><span class="o">(</span> <span class="n">manualIntern</span><span class="o">(</span> <span class="n">str</span> <span class="o">)</span> <span class="o">);</span>
+            <span class="k">if</span> <span class="o">(</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">10000</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">)</span>
+            <span class="o">{</span>
+                <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span> <span class="n">i</span> <span class="o">+</span> <span class="s">"; manual time = "</span> <span class="o">+</span> <span class="o">(</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">()</span> <span class="o">-</span> <span class="n">start</span> <span class="o">)</span> <span class="o">/</span> <span class="mf">1000.0</span> <span class="o">+</span> <span class="s">" sec"</span> <span class="o">);</span>
+                <span class="n">start</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+        <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span> <span class="s">"Total length = "</span> <span class="o">+</span> <span class="n">lst</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">}</span></code></pre></figure>
+
+<h1 id="요약">요약</h1>
+
+<ul>
+  <li>Java 6 에서는 JVM string pool 저장에 사용되는 고정 크기 메모리 영역(PermGen)때문에 String.intern()을 사용하면 안된다.</li>
+  <li>Java 7 과 Java 8은 힙 메모리에 string pool을 구현한다. 이것은 Java 7과 Java 8에서 string pool은 전체 프로그램 메모리에  의해서 제한된다는것을 의미한다.</li>
+  <li>Java 7 과 Java 8에서는 string pool 맵 크기를 설정하기 위해서 -XX:StringTableSize JVM 매개변수를 사용하라. 버킷안에서 리스트를 포함하는 해시맵으로 구현이 되어 있기때문에 그 값은 고정이 된다. 프로그램의 고유 문자열 수를 대략 계산하고 pool 크기를 이 값에 2를 곱한값에 가장 가까운 소수(충돌 가능성을 줄이기 위해)와 같은 값으로 설정하라. 그렇게 되면 String.intern이 일정한 시간안에 돌아가고 intern된 string값은 약간의 메모리 사용량만 필요로 한다. (명시적으로 사용된 Java WeakHashMap은 동일한 작업에 대해서 4~5배의 메모리가 소모된다.)</li>
+  <li>-XX:StringTableSize 매개 변수의 기본값은 Java 6 및 Java 7에서 Java7u40까지는 1009이다. Java7u40에서 60013으로 증가하였다. (Java 8에서도 값은 값이 사용된다. )</li>
+  <li>string pool 사용량에 대해서 확신이 서지않는다면 -XX:+PrintStringTableStatistics JVM 인수를 사용하라. 그렇게 되면 프로그램 종료시 string pool 사용량을 출력한다.</li>
+</ul>
+
+
+
+    <div id="disqus_thread"></div>
+<script>
+
+/**
+*  RECOMMENDED CONFIGURATION VARIABLES: EDIT AND UNCOMMENT THE SECTION BELOW TO INSERT DYNAMIC VALUES FROM YOUR PLATFORM OR CMS.
+*  LEARN WHY DEFINING THESE VARIABLES IS IMPORTANT: https://disqus.com/admin/universalcode/#configuration-variables*/
+/*
+var disqus_config = function () {
+this.page.url = PAGE_URL;  // Replace PAGE_URL with your page's canonical URL variable
+this.page.identifier = PAGE_IDENTIFIER; // Replace PAGE_IDENTIFIER with your page's unique identifier variable
+};
+*/
+(function() { // DON'T EDIT BELOW THIS LINE
+var d = document, s = d.createElement('script');
+s.src = 'https://https-fxpark-github-io.disqus.com/embed.js';
+s.setAttribute('data-timestamp', +new Date());
+(d.head || d.body).appendChild(s);
+})();
+</script>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+
+
+
+
+      </section>
+      <footer>
+        
+tactile-theme is maintained by <a href="https://github.com/jasonlong">jasonlang</a><br/>
+jekyll-tactile-theme is maintained by <a href="https://github.com/ankur-gupta">ankur-gupta</a><br/>
+This page was generated by <a href="http://pages.github.com">GitHub Pages</a>. Tactile theme by <a href="https://twitter.com/jasonlong">Jason Lang</a>.
+      </footer>
+    </div>
+  </div>
+</body>
+
+</html>
